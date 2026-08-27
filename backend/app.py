@@ -31,12 +31,14 @@ developed/demoed end-to-end.
 
 import io
 import os
+from functools import wraps
 
 import numpy as np
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from PIL import Image
 
+import auth
 from labels import CLASS_INFO, CLASS_NAMES, IMG_SIZE
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "artifacts", "dermovit_lite.tflite")
@@ -104,6 +106,46 @@ def run_inference(batch: np.ndarray) -> np.ndarray:
     return interpreter.get_tensor(_output_details[0]["index"])[0]
 
 
+def require_auth(f):
+    """Decorator: rejects requests without a valid 'Authorization: Bearer
+    <token>' header. Applied to /predict so predictions require login.
+    """
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            return jsonify({"error": "Missing or malformed Authorization header."}), 401
+        token = header.removeprefix("Bearer ").strip()
+        valid, result = auth.verify_token(token)
+        if not valid:
+            return jsonify({"error": result}), 401
+        request.username = result  # available to the wrapped view if needed
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
+@app.route("/auth/signup", methods=["POST"])
+def signup():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    success, message = auth.create_user(username, password)
+    return jsonify({"success": success, "message": message}), (201 if success else 400)
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    success, result = auth.verify_user(username, password)
+    if not success:
+        return jsonify({"success": False, "message": result}), 401
+    return jsonify({"success": True, "token": result}), 200
+
+
 @app.route("/health", methods=["GET"])
 def health():
     interpreter = get_interpreter()
@@ -111,6 +153,7 @@ def health():
 
 
 @app.route("/predict", methods=["POST"])
+@require_auth
 def predict():
     if "image" not in request.files:
         return jsonify({"error": "No 'image' file part in request"}), 400

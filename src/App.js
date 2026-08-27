@@ -1,13 +1,33 @@
 import { useState } from "react";
+import Auth from "./Auth";
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 
 export default function App() {
+  const [token, setToken] = useState(() => localStorage.getItem("dermovit_token"));
+  const [username, setUsername] = useState(() => localStorage.getItem("dermovit_username"));
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+
+  const handleAuthenticated = (newToken, newUsername) => {
+    localStorage.setItem("dermovit_token", newToken);
+    localStorage.setItem("dermovit_username", newUsername);
+    setToken(newToken);
+    setUsername(newUsername);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("dermovit_token");
+    localStorage.removeItem("dermovit_username");
+    setToken(null);
+    setUsername(null);
+    setResult(null);
+    setFile(null);
+    setPreviewUrl(null);
+  };
 
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
@@ -33,8 +53,15 @@ export default function App() {
 
       const res = await fetch(`${API_BASE_URL}/predict`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
+
+      if (res.status === 401) {
+        handleLogout();
+        setError("Your session expired — please log in again.");
+        return;
+      }
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
@@ -49,6 +76,22 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  if (!token) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background:
+            "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #2563eb 100%)",
+          padding: "30px",
+          fontFamily: "Arial",
+        }}
+      >
+        <Auth onAuthenticated={handleAuthenticated} />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -71,16 +114,39 @@ export default function App() {
             borderRadius: "25px",
             backdropFilter: "blur(10px)",
             boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
           }}
         >
-          <h1 style={{ fontSize: "55px", marginBottom: "10px" }}>
-            🩺 DermoViT-Lite
-          </h1>
+          <div>
+            <h1 style={{ fontSize: "55px", marginBottom: "10px" }}>
+              🩺 DermoViT-Lite
+            </h1>
 
-          <p style={{ fontSize: "22px", color: "#dbeafe" }}>
-            Hybrid CNN + Vision Transformer Framework for Multi-Class
-            Skin Cancer Classification using HAM10000 Dataset
-          </p>
+            <p style={{ fontSize: "22px", color: "#dbeafe" }}>
+              Hybrid CNN + Vision Transformer Framework for Multi-Class
+              Skin Cancer Classification using HAM10000 Dataset
+            </p>
+          </div>
+
+          <div style={{ textAlign: "right", color: "#dbeafe" }}>
+            <p style={{ marginBottom: "10px" }}>Logged in as <strong>{username}</strong></p>
+            <button
+              onClick={handleLogout}
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.3)",
+                padding: "8px 18px",
+                borderRadius: "10px",
+                cursor: "pointer",
+                fontSize: "14px",
+              }}
+            >
+              Log Out
+            </button>
+          </div>
         </div>
 
         {/* STATS */}
