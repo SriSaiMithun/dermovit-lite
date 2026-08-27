@@ -1,0 +1,20 @@
+# Node / React
+node_modules/
+build/
+.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Trained model artifacts note:
+# dermovit_lite.keras (~27MB) is small enough to commit normally (GitHub
+# limit is 100MB/file). metrics.json should also be committed as real
+# evidence of training results for the report.
+backend/__pycache__/
+
+# OS
+.DS_Store
+Thumbs.db
