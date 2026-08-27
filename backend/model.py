@@ -31,21 +31,7 @@ vasc  - Vascular lesions
 import tensorflow as tf
 from tensorflow.keras import layers, models
 
-IMG_SIZE = 224
-NUM_CLASSES = 7
-CLASS_NAMES = ["akiec", "bcc", "bkl", "df", "mel", "nv", "vasc"]
-
-# Human-readable labels + a short clinical note, used by the API layer
-# when it formats a response for the frontend.
-CLASS_INFO = {
-    "akiec": {"label": "Actinic Keratoses / Intraepithelial Carcinoma", "risk": "high"},
-    "bcc": {"label": "Basal Cell Carcinoma", "risk": "high"},
-    "bkl": {"label": "Benign Keratosis-like Lesion", "risk": "low"},
-    "df": {"label": "Dermatofibroma", "risk": "low"},
-    "mel": {"label": "Melanoma", "risk": "high"},
-    "nv": {"label": "Melanocytic Nevus (mole)", "risk": "low"},
-    "vasc": {"label": "Vascular Lesion", "risk": "low"},
-}
+from labels import IMG_SIZE, NUM_CLASSES, CLASS_NAMES, CLASS_INFO  # noqa: F401 (re-exported for backward compatibility)
 
 
 @tf.keras.utils.register_keras_serializable(package="DermoViTLite")
@@ -127,6 +113,58 @@ class TakeClsToken(layers.Layer):
 
     def call(self, tokens):
         return tokens[:, 0, :]
+
+
+def build_inference_model(
+    img_size: int = IMG_SIZE,
+    num_classes: int = NUM_CLASSES,
+    embed_dim: int = 256,
+    num_heads: int = 4,
+    transformer_layers: int = 4,
+    mlp_dim: int = 512,
+    dropout: float = 0.2,
+) -> tf.keras.Model:
+    """Same architecture as build_model(), minus the training-only data
+    augmentation layers (RandomFlip/Rotation/Zoom/Contrast).
+
+    Those layers are identity at inference time anyway, but their random
+    branches still get traced into the graph on export, which forces the
+    TFLite converter to pull in heavy "Flex" TF ops for no benefit. This
+    trims the deployed graph down for lightweight, lower-memory inference
+    (see backend/convert_to_tflite.py). Layer names match build_model()'s
+    post-augmentation layers exactly, so trained weights transfer over
+    by name with no retraining needed.
+    """
+    inputs = layers.Input(shape=(img_size, img_size, 3), name="lesion_image")
+    x = tf.keras.applications.efficientnet.preprocess_input(inputs)
+
+    backbone = tf.keras.applications.EfficientNetB0(
+        include_top=False, weights=None, input_shape=(img_size, img_size, 3)
+    )
+    feature_map = backbone(x)
+
+    feature_map = layers.Conv2D(embed_dim, kernel_size=1, padding="same")(feature_map)
+    h, w = feature_map.shape[1], feature_map.shape[2]
+    tokens = layers.Reshape((h * w, embed_dim))(feature_map)
+
+    cls_token = layers.Embedding(1, embed_dim)(tf.zeros((1, 1), dtype="int32"))
+    cls_token = BroadcastClsToken()([cls_token, tokens])
+    tokens = layers.Concatenate(axis=1)([cls_token, tokens])
+
+    tokens = AddPositionEmbedding()(tokens)
+    for i in range(transformer_layers):
+        tokens = TransformerEncoderBlock(
+            embed_dim, num_heads, mlp_dim, dropout, name=f"vit_block_{i}"
+        )(tokens)
+
+    tokens = layers.LayerNormalization(epsilon=1e-6)(tokens)
+    cls_output = TakeClsToken()(tokens)
+
+    x = layers.Dense(256, activation="gelu")(cls_output)
+    x = layers.Dropout(dropout)(x)
+    outputs = layers.Dense(num_classes, activation="softmax", name="predictions")(x)
+
+    return models.Model(inputs, outputs, name="DermoViT-Lite-Inference")
 
 
 def build_model(
