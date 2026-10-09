@@ -1,0 +1,102 @@
+{
+  "threshold": 164.26262501963092,
+  "percentile": 99.0,
+  "val_score_quantiles": {
+    "50": 21.98932156370931,
+    "90": 60.893818302770526,
+    "95": 85.50610612688277,
+    "99": 164.26262501963092
+  },
+  "held_out_test_false_rejection": {
+    "n": 1000,
+    "input_gate": 0.049,
+    "feature_gate": 0.007,
+    "either_gate": 0.053
+  },
+  "non_skin_photos": {
+    "astronaut": {
+      "input_gate": "passed",
+      "feature_distance": 619.1,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "coffee": {
+      "input_gate": "passed",
+      "feature_distance": 169.6,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "chelsea": {
+      "input_gate": "passed",
+      "feature_distance": 404.6,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "rocket": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 299.1,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "camera": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 744.1,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "grass": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 117.1,
+      "feature_gate": "passed",
+      "rejected_by_either": true
+    },
+    "gravel": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 125.3,
+      "feature_gate": "passed",
+      "rejected_by_either": true
+    },
+    "brick": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 36.8,
+      "feature_gate": "passed",
+      "rejected_by_either": true
+    },
+    "retina": {
+      "input_gate": "passed",
+      "feature_distance": 114.5,
+      "feature_gate": "passed",
+      "rejected_by_either": false
+    },
+    "immunohistochemistry": {
+      "input_gate": "passed",
+      "feature_distance": 259.5,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "colorwheel": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 187.7,
+      "feature_gate": "rejected",
+      "rejected_by_either": true
+    },
+    "text": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 21.2,
+      "feature_gate": "passed",
+      "rejected_by_either": true
+    },
+    "page": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 32.7,
+      "feature_gate": "passed",
+      "rejected_by_either": true
+    },
+    "coins": {
+      "input_gate": "rejected:NOT_SKIN_COLORED",
+      "feature_distance": 80.3,
+      "feature_gate": "passed",
+      "rejected_by_either": true
+    }
+  }
+}
