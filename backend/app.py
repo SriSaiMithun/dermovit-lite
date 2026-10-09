@@ -34,6 +34,7 @@ import validation
 from labels import CLASS_INFO, CLASS_NAMES
 from ood import FeatureGate
 from predictor import ImageDecodeError, Predictor, decode_image, to_model_input
+from labels import CLASS_INFO, CLASS_NAMES, IMG_SIZE
 
 HERE = os.path.dirname(__file__)
 MODEL_PATH = os.path.join(HERE, "artifacts", "dermovit_lite.tflite")
@@ -93,6 +94,46 @@ def require_auth(f):
 @app.errorhandler(413)
 def too_large(_):
     return jsonify({"error": f"File too large (max {MAX_UPLOAD_MB} MB)."}), 413
+
+
+def require_auth(f):
+    """Decorator: rejects requests without a valid 'Authorization: Bearer
+    <token>' header. Applied to /predict so predictions require login.
+    """
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        header = request.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            return jsonify({"error": "Missing or malformed Authorization header."}), 401
+        token = header.removeprefix("Bearer ").strip()
+        valid, result = auth.verify_token(token)
+        if not valid:
+            return jsonify({"error": result}), 401
+        request.username = result  # available to the wrapped view if needed
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
+@app.route("/auth/signup", methods=["POST"])
+def signup():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    success, message = auth.create_user(username, password)
+    return jsonify({"success": success, "message": message}), (201 if success else 400)
+
+
+@app.route("/auth/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    success, result = auth.verify_user(username, password)
+    if not success:
+        return jsonify({"success": False, "message": result}), 401
+    return jsonify({"success": True, "token": result}), 200
 
 
 @app.route("/health", methods=["GET"])
