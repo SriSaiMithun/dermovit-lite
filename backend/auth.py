@@ -6,7 +6,7 @@ Design choices, and why:
   disk persists across spin-down/wake cycles (only wiped on a new
   deploy), which is fine for a student project - a managed database
   would be the real-world upgrade, noted as a limitation in the report.
-- Passwords hashed with werkzeug's generate_password_hash (PBKDF2) -
+- Passwords hashed with werkzeug's generate_password_hash (salted scrypt) -
   never stored or logged in plaintext.
 - JWT (PyJWT) for stateless auth: /predict requires a valid
   'Authorization: Bearer <token>' header. Tokens expire after 24h.
@@ -56,7 +56,7 @@ def create_user(username: str, password: str) -> tuple[bool, str]:
         password_hash = generate_password_hash(password)
         conn.execute(
             "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-            (username, password_hash, datetime.datetime.utcnow().isoformat()),
+            (username, password_hash, datetime.datetime.now(datetime.timezone.utc).isoformat()),
         )
         conn.commit()
         return True, "Account created."
@@ -82,7 +82,7 @@ def verify_user(username: str, password: str) -> tuple[bool, str]:
     token = jwt.encode(
         {
             "username": username,
-            "exp": datetime.datetime.utcnow()
+            "exp": datetime.datetime.now(datetime.timezone.utc)
             + datetime.timedelta(hours=TOKEN_EXPIRY_HOURS),
         },
         JWT_SECRET,

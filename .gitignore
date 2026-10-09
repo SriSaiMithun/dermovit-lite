@@ -18,3 +18,9 @@ backend/__pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# User accounts database (contains password hashes) - never commit
+backend/artifacts/users.db
+
+# Test / tool caches
+.pytest_cache/
