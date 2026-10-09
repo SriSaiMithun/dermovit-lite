@@ -1,391 +1,157 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import "./App.css";
+import Auth from "./Auth";
+import ModelInfo from "./components/ModelInfo";
+import Results from "./components/Results";
+import Uploader from "./components/Uploader";
+import { pingHealth, predict, validateFile } from "./api";
+import metrics from "./metrics.json";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const SERVER_LABEL = {
+  checking: "Connecting…",
+  waking: "Server waking up (free tier)…",
+  ready: "Server ready",
+  offline: "Server unreachable",
+};
+
+function useServerStatus() {
+  const [status, setStatus] = useState("checking");
+  useEffect(() => {
+    let alive = true;
+    const slow = setTimeout(() => alive && setStatus((s) => (s === "checking" ? "waking" : s)), 2500);
+    pingHealth().then((ok) => alive && setStatus(ok ? "ready" : "offline"));
+    return () => { alive = false; clearTimeout(slow); };
+  }, []);
+  return status;
+}
 
 export default function App() {
+  const [token, setToken] = useState(() => localStorage.getItem("dermovit_token"));
+  const [username, setUsername] = useState(() => localStorage.getItem("dermovit_username"));
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [fileError, setFileError] = useState(null);
+  const [phase, setPhase] = useState("idle"); // idle | loading | ok | rejected | error
   const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const server = useServerStatus();
+  const urlRef = useRef(null);
 
-  const handleFileChange = (e) => {
-    const selected = e.target.files[0];
-    if (!selected) return;
-    setFile(selected);
-    setPreviewUrl(URL.createObjectURL(selected));
-    setResult(null);
-    setError(null);
+  const clearImage = useCallback(() => {
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = null;
+    setFile(null); setPreviewUrl(null); setFileError(null);
+    setPhase("idle"); setResult(null); setErrorMsg(null);
+  }, []);
+
+  useEffect(() => () => urlRef.current && URL.revokeObjectURL(urlRef.current), []);
+
+  const handleAuthenticated = (newToken, name) => {
+    localStorage.setItem("dermovit_token", newToken);
+    localStorage.setItem("dermovit_username", name);
+    setToken(newToken); setUsername(name); setNotice(null);
   };
 
-  const handlePredict = async () => {
-    if (!file) {
-      setError("Please choose an image first.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setResult(null);
+  const handleLogout = useCallback((message = null) => {
+    localStorage.removeItem("dermovit_token");
+    localStorage.removeItem("dermovit_username");
+    clearImage();
+    setToken(null); setUsername(null); setNotice(message);
+  }, [clearImage]);
 
-    try {
-      const formData = new FormData();
-      formData.append("image", file);
-
-      const res = await fetch(`${API_BASE_URL}/predict`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || `Request failed (${res.status})`);
-      }
-
-      const data = await res.json();
-      setResult(data);
-    } catch (err) {
-      setError(err.message || "Something went wrong contacting the prediction API.");
-    } finally {
-      setLoading(false);
-    }
+  const handleFile = (f) => {
+    const problem = validateFile(f);
+    if (problem) { setFileError(problem); return; }
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = URL.createObjectURL(f);
+    setFile(f); setPreviewUrl(urlRef.current); setFileError(null);
+    setPhase("idle"); setResult(null);
   };
+
+  const handleAnalyze = async () => {
+    const problem = validateFile(file);
+    if (problem) { setFileError(problem); return; }
+    setPhase("loading"); setResult(null); setErrorMsg(null);
+    const out = await predict(file, token);
+    if (out.kind === "unauthorized") return handleLogout("Your session expired - please log in again.");
+    if (out.kind === "ok") { setResult(out.data); setPhase("ok"); }
+    else if (out.kind === "rejected") { setResult(out.data); setPhase("rejected"); }
+    else { setErrorMsg(out.message); setPhase("error"); }
+  };
+
+  if (!token) {
+    return (
+      <div className="app app-auth">
+        <Auth onAuthenticated={handleAuthenticated} notice={notice} serverStatus={server} />
+      </div>
+    );
+  }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background:
-          "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #2563eb 100%)",
-        padding: "30px",
-        fontFamily: "Arial",
-        color: "white",
-      }}
-    >
-      <div style={{ maxWidth: "1400px", margin: "auto" }}>
-
-        {/* HEADER */}
-        <div
-          style={{
-            background: "rgba(255,255,255,0.1)",
-            padding: "30px",
-            borderRadius: "25px",
-            backdropFilter: "blur(10px)",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.3)",
-          }}
-        >
-          <h1 style={{ fontSize: "55px", marginBottom: "10px" }}>
-            🩺 DermoViT-Lite
-          </h1>
-
-          <p style={{ fontSize: "22px", color: "#dbeafe" }}>
-            Hybrid CNN + Vision Transformer Framework for Multi-Class
-            Skin Cancer Classification using HAM10000 Dataset
-          </p>
+    <div className="app">
+      <header className="topbar">
+        <div className="brand"><span className="brand-mark" aria-hidden="true" />DermoViT-Lite</div>
+        <div className="topbar-right">
+          <span className={`status status-${server}`}>{SERVER_LABEL[server]}</span>
+          <span className="muted small">Signed in as <strong>{username}</strong></span>
+          <button className="btn btn-ghost btn-sm" onClick={() => handleLogout()}>Log out</button>
         </div>
+      </header>
 
-        {/* STATS */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))",
-            gap: "20px",
-            marginTop: "30px",
-          }}
-        >
-          {[
-            ["10,015", "Dermoscopic Images"],
-            ["7", "Skin Lesion Classes"],
-            ["EfficientNetB0+ViT", "Model Architecture"],
-            ["Real-Time", "Prediction Speed"],
-          ].map((item, index) => (
-            <div
-              key={index}
-              style={{
-                background: "white",
-                color: "#0f172a",
-                padding: "25px",
-                borderRadius: "20px",
-                textAlign: "center",
-                boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
-              }}
-            >
-              <h1 style={{ fontSize: "32px", margin: 0 }}>{item[0]}</h1>
-              <p style={{ fontWeight: "bold" }}>{item[1]}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* MAIN SECTION */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1fr",
-            gap: "25px",
-            marginTop: "30px",
-          }}
-        >
-          {/* LEFT */}
-          <div
-            style={{
-              background: "white",
-              color: "#0f172a",
-              padding: "30px",
-              borderRadius: "25px",
-              boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
-            }}
-          >
-            <h2 style={{ fontSize: "35px" }}>
-              📤 Upload Dermoscopic Image
-            </h2>
-
-            <div
-              style={{
-                marginTop: "20px",
-                border: "3px dashed #2563eb",
-                padding: "40px",
-                borderRadius: "20px",
-                textAlign: "center",
-                background: "#eff6ff",
-              }}
-            >
-              <h3>Upload HAM10000 Skin Lesion Image</h3>
-
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                style={{
-                  marginTop: "20px",
-                  fontSize: "16px",
-                }}
-              />
-
-              {previewUrl && (
-                <div style={{ marginTop: "20px" }}>
-                  <img
-                    src={previewUrl}
-                    alt="Selected lesion preview"
-                    style={{
-                      maxWidth: "260px",
-                      borderRadius: "12px",
-                      boxShadow: "0 6px 16px rgba(0,0,0,0.2)",
-                    }}
-                  />
-                </div>
-              )}
-
-              <div style={{ marginTop: "20px" }}>
-                <button
-                  onClick={handlePredict}
-                  disabled={!file || loading}
-                  style={{
-                    background: !file || loading ? "#94a3b8" : "#2563eb",
-                    color: "white",
-                    border: "none",
-                    padding: "14px 32px",
-                    borderRadius: "12px",
-                    fontSize: "16px",
-                    fontWeight: "bold",
-                    cursor: !file || loading ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {loading ? "Analyzing..." : "Run Prediction"}
-                </button>
-              </div>
-            </div>
-
-            {/* ERROR */}
-            {error && (
-              <div
-                style={{
-                  marginTop: "20px",
-                  background: "#fee2e2",
-                  color: "#991b1b",
-                  padding: "18px",
-                  borderRadius: "16px",
-                }}
-              >
-                ⚠ {error}
-              </div>
-            )}
-
-            {/* DEMO MODE NOTICE */}
-            {result && result.demo_mode && (
-              <div
-                style={{
-                  marginTop: "30px",
-                  background: "#fef9c3",
-                  padding: "20px",
-                  borderRadius: "20px",
-                  color: "#854d0e",
-                }}
-              >
-                <strong>Demo mode:</strong> {result.message}
-              </div>
-            )}
-
-            {/* RESULT */}
-            {result && !result.demo_mode && (
-              <div
-                style={{
-                  marginTop: "30px",
-                  background: "#dcfce7",
-                  padding: "25px",
-                  borderRadius: "20px",
-                }}
-              >
-                <h2 style={{ color: "#166534" }}>
-                  ✅ Prediction Result
-                </h2>
-
-                <h1
-                  style={{
-                    color: "#15803d",
-                    fontSize: "40px",
-                  }}
-                >
-                  {result.label}
-                </h1>
-
-                <p style={{ fontSize: "20px" }}>
-                  Confidence Score: <strong>{result.confidence}%</strong>
-                </p>
-
-                <p style={{ lineHeight: "1.7" }}>
-                  {result.disclaimer}
-                </p>
-
-                <details style={{ marginTop: "10px" }}>
-                  <summary style={{ cursor: "pointer", fontWeight: "bold" }}>
-                    Full class probability breakdown
-                  </summary>
-                  <ul>
-                    {result.all_probabilities &&
-                      Object.entries(result.all_probabilities)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([cls, pct]) => (
-                          <li key={cls}>
-                            {cls}: {pct}%
-                          </li>
-                        ))}
-                  </ul>
-                </details>
-              </div>
-            )}
-          </div>
-
-          {/* RIGHT */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "25px",
-            }}
-          >
-            {/* WORKFLOW */}
-            <div
-              style={{
-                background: "white",
-                color: "#0f172a",
-                padding: "25px",
-                borderRadius: "25px",
-              }}
-            >
-              <h2>🧠 AI Workflow</h2>
-
-              <ol style={{ lineHeight: "2" }}>
-                <li>Image Upload</li>
-                <li>Image Preprocessing</li>
-                <li>CNN Feature Extraction</li>
-                <li>Vision Transformer Analysis</li>
-                <li>Hybrid Classification</li>
-                <li>Prediction Output</li>
-              </ol>
-            </div>
-
-            {/* TECH STACK */}
-            <div
-              style={{
-                background: "white",
-                color: "#0f172a",
-                padding: "25px",
-                borderRadius: "25px",
-              }}
-            >
-              <h2>⚙ Technology Stack</h2>
-
-              <ul style={{ lineHeight: "2" }}>
-                <li>React (frontend)</li>
-                <li>Flask REST API (backend)</li>
-                <li>TensorFlow / Keras</li>
-                <li>EfficientNetB0 (CNN backbone)</li>
-                <li>Vision Transformer encoder</li>
-                <li>Google Colab (training)</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        {/* ARCHITECTURE */}
-        <div
-          style={{
-            marginTop: "35px",
-            background: "rgba(255,255,255,0.1)",
-            padding: "30px",
-            borderRadius: "25px",
-            backdropFilter: "blur(8px)",
-          }}
-        >
-          <h2 style={{ fontSize: "35px" }}>
-            🏗 High Level Architecture
-          </h2>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit,minmax(180px,1fr))",
-              gap: "20px",
-              marginTop: "25px",
-            }}
-          >
-            {[
-              "Input Image",
-              "Preprocessing",
-              "CNN + ViT Hybrid",
-              "Softmax Classification",
-              "Prediction Output",
-            ].map((step, index) => (
-              <div
-                key={index}
-                style={{
-                  background: "white",
-                  color: "#0f172a",
-                  padding: "25px",
-                  borderRadius: "20px",
-                  textAlign: "center",
-                  fontWeight: "bold",
-                }}
-              >
-                {step}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* FOOTER */}
-        <div
-          style={{
-            textAlign: "center",
-            marginTop: "40px",
-            color: "#cbd5e1",
-          }}
-        >
+      <main className="container">
+        <section className="hero">
+          <h1>Skin lesion screening with a hybrid CNN + Vision Transformer</h1>
           <p>
-            DermoViT-Lite © 2026 | AIML Major Project — Phase 2
+            An academic prototype trained on the HAM10000 dermoscopy dataset. It looks at one lesion image and
+            estimates which of 7 lesion types it most resembles.
           </p>
+          <div className="stats">
+            <div><strong>10,015</strong><span>training images</span></div>
+            <div><strong>7</strong><span>lesion classes</span></div>
+            <div><strong>{(metrics.test_accuracy * 100).toFixed(1)}%</strong><span>test accuracy</span></div>
+            <div><strong>{metrics.macro_f1.toFixed(2)}</strong><span>macro F1</span></div>
+          </div>
+        </section>
+
+        <div className="grid-2">
+          <Uploader
+            previewUrl={previewUrl}
+            fileName={file?.name}
+            loading={phase === "loading"}
+            error={fileError}
+            onFile={handleFile}
+            onAnalyze={handleAnalyze}
+            onClear={clearImage}
+          />
+          <Results state={phase} result={result} message={errorMsg} />
         </div>
-      </div>
+
+        <ModelInfo />
+
+        <section className="card" aria-labelledby="how-title">
+          <h2 id="how-title" className="card-title">How it works</h2>
+          <ol className="steps">
+            <li><strong>Image check</strong><span>Rejects screenshots, blank, too dark/bright and non-skin images.</span></li>
+            <li><strong>CNN features</strong><span>EfficientNetB0 extracts local texture and colour patterns.</span></li>
+            <li><strong>Vision Transformer</strong><span>A 4-layer encoder relates regions across the whole lesion.</span></li>
+            <li><strong>Resemblance check</strong><span>Compares the image's features with real training data.</span></li>
+            <li><strong>Classification</strong><span>Softmax over 7 classes, shown as probabilities.</span></li>
+          </ol>
+        </section>
+
+        <section className="card card-warn" aria-labelledby="limits-title">
+          <h2 id="limits-title" className="card-title">Limitations &amp; responsible use</h2>
+          <ul className="plain-list">
+            <li>This is <strong>not a medical device</strong> and not a diagnosis. See a dermatologist for any concerning skin change.</li>
+            <li>It was trained only on dermoscopic images from one dataset; phone photos of skin will be less reliable.</li>
+            <li>Rare classes (e.g. melanoma, dermatofibroma) are weak - see the per-class table above.</li>
+            <li>The image checks are heuristics and can occasionally reject a valid image or accept an odd one.</li>
+          </ul>
+        </section>
+      </main>
+
+      <footer className="footer">DermoViT-Lite © 2026 · AI &amp; ML Major Project, Phase 2</footer>
     </div>
   );
 }

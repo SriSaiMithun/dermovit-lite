@@ -1,0 +1,48 @@
+{
+  "test_accuracy": 0.603459747172322,
+  "macro_f1": 0.4437730875391726,
+  "per_class": {
+    "akiec": {
+      "precision": 0.3378,
+      "recall": 0.5102,
+      "f1-score": 0.4065,
+      "support": 49.0
+    },
+    "bcc": {
+      "precision": 0.5256,
+      "recall": 0.5325,
+      "f1-score": 0.529,
+      "support": 77.0
+    },
+    "bkl": {
+      "precision": 0.4037,
+      "recall": 0.2667,
+      "f1-score": 0.3212,
+      "support": 165.0
+    },
+    "df": {
+      "precision": 0.0879,
+      "recall": 0.4706,
+      "f1-score": 0.1481,
+      "support": 17.0
+    },
+    "mel": {
+      "precision": 0.239,
+      "recall": 0.521,
+      "f1-score": 0.3277,
+      "support": 167.0
+    },
+    "nv": {
+      "precision": 0.9168,
+      "recall": 0.6789,
+      "f1-score": 0.7801,
+      "support": 1006.0
+    },
+    "vasc": {
+      "precision": 0.4524,
+      "recall": 0.8636,
+      "f1-score": 0.5938,
+      "support": 22.0
+    }
+  }
+}
